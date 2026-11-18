@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevOps Practical 5 - Docker Compose</title>
+  <style>
+    :root {
+      --red: #b4232f;
+      --ink: #252525;
+      --muted: #666;
+      --line: #e5e5e5;
+      --paper: #ffffff;
+      --code: #f5f6f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f3f4f6;
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.6;
+    }
+    header {
+      background: var(--paper);
+      border-top: 6px solid var(--red);
+      border-bottom: 1px solid var(--line);
+      padding: 30px 20px;
+      text-align: center;
+    }
+    header h1 {
+      margin: 0 0 6px;
+      color: var(--red);
+      font-size: clamp(24px, 4vw, 34px);
+    }
+    header p { margin: 0; color: var(--muted); }
+    main {
+      max-width: 960px;
+      margin: 28px auto;
+      padding: 30px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 3px 14px rgba(0,0,0,.04);
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 4;
+    }
+    .document {
+      padding: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    footer {
+      max-width: 960px;
+      margin: 0 auto 28px;
+      padding: 0 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 600px) {
+      main { margin: 12px; padding: 14px; }
+      .document { padding: 12px; }
+      pre { font-size: 12px; }
+    }
+    @media print {
+      body { background: #fff; }
+      header { border-top: 0; }
+      main { margin: 0; max-width: none; border: 0; box-shadow: none; padding: 10px; }
+      footer { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DEVOPS PRACTICAL 5</h1>
+    <p>Docker Compose – Multi-Container Application</p>
+  </header>
+  <main>
+    <div class="document">
+      <pre>DEVOPS PRACTICAL 5
+                                    Docker Compose – Multi-Container Application
+
+
+
+
+ Objective
+ To create a web application connected to a MySQL database using Docker Compose, run both services as
+ containers, verify database connectivity, view logs, scale down and remove the containers and volumes.
+
+
+
+         Web application                       PHP with Apache
+
+         Database                              MySQL 8.0
+
+         Web address                           http://localhost:8000
+
+         Compose file                          compose.yaml (or docker-compose.yml)
+
+
+
+
+ Note: Replace example passwords if required. These sample credentials are only for a local college practical, not for production use.
+
+
+
+
+
+ 1. Understand the Application
+ This practical uses two services: web runs the PHP application on Apache, and db runs MySQL 8.0. Docker
+ Compose creates a shared network so the web service can connect to MySQL using the service name db.
+
+ • Web service: built from the Dockerfile in the project folder.
+
+ • Port mapping: host port 8000 is connected to container port 80.
+
+ • Database service: uses the mysql:8.0 image.
+
+ • Data persistence: a named volume stores MySQL data even if the database container is recreated.
+
+ • Dependency: web starts after the database service is healthy.
+
+
+ 2. Check Docker Installation
+ Open PowerShell or CMD and run:
+   docker --version
+   docker compose version
+   docker info
+
+ Docker Desktop should be installed and running. If these commands show version details and Docker Engine
+ information, continue.
+
+
+ 3. Create the Project Folder
+ Create a folder named docker-compose-practical and open it in VS Code.
+   mkdir docker-compose-practical
+   cd docker-compose-practical
+   code .
+
+ Create these three files in the same folder:
+   docker-compose-practical/
+   ■
+   ■■■ Dockerfile
+   ■■■ compose.yaml
+   ■■■ index.php
+
+
+ 4. Create the PHP Web Application
+ Create a file named index.php. The page connects to MySQL using the hostname db, creates a small table, inserts
+ one sample record if the table is empty, and displays the stored data.
+   &lt;?php
+   $host = &quot;db&quot;;
+   $user = &quot;root&quot;;
+   $password = &quot;root123&quot;;
+   $database = &quot;studentdb&quot;;
+
+   $conn = null;
+
+   for ($i = 0; $i &lt; 20; $i++) {
+       $conn = new mysqli($host, $user, $password, $database);
+       if (!$conn-&gt;connect_error) {
+           break;
+       }
+       sleep(2);
+   }
+
+   if (!$conn || $conn-&gt;connect_error) {
+       die(&quot;Database connection failed.&quot;);
+   }
+
+   $conn-&gt;query(&quot;CREATE TABLE IF NOT EXISTS students (
+
+
+
+
+       id INT AUTO_INCREMENT PRIMARY KEY,
+       name VARCHAR(100) NOT NULL
+   )&quot;);
+
+   $result = $conn-&gt;query(&quot;SELECT COUNT(*) AS total FROM students&quot;);
+   $row = $result-&gt;fetch_assoc();
+
+   if ($row[&quot;total&quot;] == 0) {
+       $conn-&gt;query(&quot;INSERT INTO students (name) VALUES (&#x27;Demo Student&#x27;)&quot;);
+   }
+
+   $result = $conn-&gt;query(&quot;SELECT id, name FROM students&quot;);
+
+   echo &quot;&lt;h1&gt;Docker Compose Practical&lt;/h1&gt;&quot;;
+   echo &quot;&lt;h2&gt;Database connection successful!&lt;/h2&gt;&quot;;
+   echo &quot;&lt;h3&gt;Student Records&lt;/h3&gt;&quot;;
+   echo &quot;&lt;ul&gt;&quot;;
+
+   while ($student = $result-&gt;fetch_assoc()) {
+       echo &quot;&lt;li&gt;&quot; . htmlspecialchars($student[&quot;name&quot;]) . &quot;&lt;/li&gt;&quot;;
+   }
+
+   echo &quot;&lt;/ul&gt;&quot;;
+   $conn-&gt;close();
+   ?&gt;
+
+ Save the file. The connection retry helps the web application wait briefly while MySQL starts.
+
+
+ 5. Create the Dockerfile
+ Create a file named exactly Dockerfile (without .txt). It uses PHP with Apache, installs the MySQLi extension and
+ copies the web page into Apache&#x27;s web directory.
+   FROM php:8.2-apache
+
+   RUN docker-php-ext-install mysqli
+
+   COPY index.php /var/www/html/index.php
+
+   EXPOSE 80
+
+
+ 6. Create the Docker Compose File
+ Create compose.yaml and add the following configuration. It defines the web and db services, port mapping,
+ dependency, MySQL environment variables and persistent storage.
+   services:
+     web:
+       build: .
+       ports:
+          - &quot;8000:80&quot;
+       depends_on:
+          db:
+            condition: service_healthy
+
+     db:
+       image: mysql:8.0
+       environment:
+         MYSQL_ROOT_PASSWORD: root123
+         MYSQL_DATABASE: studentdb
+       volumes:
+         - mysql_data:/var/lib/mysql
+       healthcheck:
+         test: [&quot;CMD&quot;, &quot;mysqladmin&quot;, &quot;ping&quot;, &quot;-h&quot;, &quot;localhost&quot;, &quot;-uroot&quot;, &quot;-proot123&quot;]
+         interval: 5s
+         timeout: 5s
+         retries: 10
+
+   volumes:
+     mysql_data:
+
+
+
+
+ The Compose service name db works as the database hostname inside the Compose network. Do not use localhost as the PHP
+ database host.
+
+
+
+
+
+ 7. Build and Start Both Containers
+ Make sure the terminal is inside the project folder, where compose.yaml is saved. Run:
+   docker compose up -d --build
+
+ Docker downloads the required images, builds the PHP web image and starts both services in the background.
+
+ Check running containers
+   docker compose ps
+
+ You should see the web and db services running. The database health status should become healthy after MySQL
+ finishes starting.
+
+
+ 8. Verify the Web Application
+ Open a browser and visit:
+   http://localhost:8000
+
+ Expected result: the page displays Database connection successful! and a sample student record named Demo
+ Student. This confirms that the PHP web application connected to MySQL and retrieved data.
+
+ Verify from the terminal
+   docker compose exec db mysql -uroot -proot123 -D studentdb -e &quot;SELECT * FROM students;&quot;
+
+ The command should display the student record stored in the MySQL database.
+
+
+ 9. View Logs
+ Use these commands to view logs for both services or an individual service:
+   docker compose logs
+   docker compose logs web
+   docker compose logs db
+   docker compose logs -f
+
+ Press Ctrl + C to stop following live logs. This does not stop the containers.
+
+
+ 10. Scale Down the Application
+ To reduce the web service to one container, run:
+   docker compose up -d --scale web=1
+   docker compose ps
+
+ This practical&#x27;s web service uses a fixed host port (8000), so keep one web replica when using this port mapping. The command
+ ensures the service is running with one replica.
+
+
+ 11. Stop and Remove Containers and Volumes
+ To stop and remove the containers, network and the named database volume, run:
+   docker compose down -v
+
+ The -v option removes the named volume mysql_data, so the stored database records are deleted. Without -v, the
+ named volume is retained.
+
+ Optional cleanup
+   docker compose ps -a
+   docker images
+
+
+ 12. Important Commands for Practical
+
+
+        Purpose                            Command
+
+        Build and start                    docker compose up -d --build
+
+        Check containers                   docker compose ps
+
+        View all logs                      docker compose logs
+
+        Follow logs                        docker compose logs -f
+
+        View web logs                      docker compose logs web
+
+        View database logs                 docker compose logs db
+
+        Scale web to one                   docker compose up -d --scale web=1
+
+        Stop and remove with volumes       docker compose down -v
+
+
+
+ 13. Practical Completion Checklist
+ • Docker and Docker Compose versions verified.
+
+ • Project folder contains Dockerfile, compose.yaml and index.php.
+
+ • Web service is built from the Dockerfile.
+
+ • MySQL service uses mysql:8.0 and the required environment variables.
+
+ • Web service maps port 8000:80 and depends on db.
+
+ • Database data is stored in a named volume.
+
+ • Both containers are running and the web page is accessible.
+
+ • Web page successfully displays data retrieved from MySQL.
+
+ • Logs are displayed and docker compose down -v is demonstrated.
+
+ Result: A PHP web application and MySQL database were successfully configured and run as a multi-container
+ application using Docker Compose.</pre>
+    </div>
+  </main>
+  <footer>DevOps Practical 5 · Docker Compose</footer>
+</body>
+</html>

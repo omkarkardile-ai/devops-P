@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Practical 6 - Introduction to Ansible</title>
+  <style>
+    :root { --red:#9b1c31; --ink:#242424; --muted:#626b75; --line:#e3e6ea; --code:#f4f6f8; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f6f7f9; color:var(--ink); font:16px/1.65 Arial, Helvetica, sans-serif; }
+    .page { max-width:920px; margin:32px auto; padding:42px 52px; background:#fff; box-shadow:0 4px 22px #0000000c; }
+    header { text-align:center; border-bottom:3px solid var(--red); padding-bottom:22px; margin-bottom:28px; }
+    h1 { margin:0; color:var(--red); font-size:32px; letter-spacing:1px; }
+    .subtitle { margin:6px 0 0; color:var(--muted); font-size:17px; }
+    h2 { margin:34px 0 12px; color:var(--red); font-size:22px; border-bottom:1px solid var(--line); padding-bottom:7px; }
+    h3 { margin:22px 0 8px; font-size:17px; }
+    p { margin:9px 0; }
+    .note { background:#fff7e8; border-left:4px solid #d99a26; padding:13px 16px; margin:18px 0; }
+    .info { background:#f2f5f8; border-left:4px solid #778899; padding:12px 16px; margin:14px 0; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--code); border:1px solid var(--line); border-radius:7px; padding:15px 17px; font:13.5px/1.55 Consolas, "Courier New", monospace; margin:10px 0 17px; }
+    code { font-family:Consolas, "Courier New", monospace; background:#f0f1f3; padding:1px 4px; border-radius:3px; }
+    .diagram { text-align:center; font-family:Consolas, monospace; font-weight:bold; }
+    ol, ul { padding-left:25px; }
+    li { margin:6px 0; }
+    .step { page-break-inside:avoid; }
+    footer { margin-top:40px; border-top:1px solid var(--line); padding-top:12px; color:var(--muted); font-size:13px; text-align:center; }
+    @media (max-width:650px) { .page { margin:0; padding:25px 18px; } h1{font-size:26px;} pre{font-size:12px;} }
+    @media print { body{background:#fff;} .page{box-shadow:none; margin:0; max-width:none; padding:15mm;} h2{break-after:avoid;} pre{break-inside:avoid;} }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <h1>PRACTICAL 6</h1>
+    <p class="subtitle">Introduction to Ansible — Step-by-step execution guide</p>
+  </header>
+
+  <p><strong>Objective:</strong> Configure one Ansible Control Node and two Managed Nodes. Install Ansible, connect to the remote machines, install required packages, start Apache, copy a web page, and verify idempotency.</p>
+
+  <div class="note"><strong>Important:</strong> Run the control-node commands inside Ubuntu (WSL or a Linux VM). The two managed nodes must be separate Ubuntu/Linux machines reachable over SSH. Replace every example IP address and username with your actual values.</div>
+
+  <section class="step">
+    <h2>1. Understand the setup</h2>
+    <pre class="diagram">CONTROL NODE (Ubuntu / WSL)
+        |
+        | SSH
+        +----------&gt; MANAGED NODE 1 (Ubuntu)
+        |
+        +----------&gt; MANAGED NODE 2 (Ubuntu)</pre>
+    <p><strong>Example values used in this guide</strong> (change them to yours):</p>
+    <pre>Control node: Ubuntu
+Managed node 1 IP: 192.168.1.101
+Managed node 2 IP: 192.168.1.102
+Remote username: ubuntu</pre>
+    <p>The IP addresses above are examples only. Do not copy them unless they match your machines.</p>
+  </section>
+
+  <section class="step">
+    <h2>2. Prepare the two Managed Nodes</h2>
+    <p>Perform these commands on <strong>both</strong> managed Ubuntu machines. Open a terminal on each machine.</p>
+    <pre>sudo apt update
+sudo apt install openssh-server python3 -y
+sudo systemctl enable --now ssh
+sudo systemctl status ssh</pre>
+    <p>Find each managed node's IP address:</p>
+    <pre>hostname -I</pre>
+    <p>Write down the IP address of each node. Make sure the control node can reach both machines. You should also know the login username on each managed node.</p>
+  </section>
+
+  <section class="step">
+    <h2>3. Install Ansible on the Control Node</h2>
+    <p>Open Ubuntu on your control node (for example, Ubuntu in WSL). Run:</p>
+    <pre>sudo apt update
+sudo apt install ansible -y
+ansible --version</pre>
+    <p>The last command should display the installed Ansible version.</p>
+  </section>
+
+  <section class="step">
+    <h2>4. Test SSH connection to both Managed Nodes</h2>
+    <p>From the control node, test that you can log in to each remote machine. Replace the IP and username:</p>
+    <pre>ssh ubuntu@192.168.1.101
+# Enter the remote user's password if asked.
+# Type exit to return to the control node.
+
+ssh ubuntu@192.168.1.102
+# Type exit to return to the control node.</pre>
+    <p>For password-free SSH login (recommended), run on the control node:</p>
+    <pre>ssh-keygen -t ed25519
+# Press Enter to accept the default file and optional passphrase.
+
+ssh-copy-id ubuntu@192.168.1.101
+ssh-copy-id ubuntu@192.168.1.102</pre>
+    <div class="info">If <code>ssh-copy-id</code> is unavailable, copy the public key from <code>~/.ssh/id_ed25519.pub</code> into the remote user's <code>~/.ssh/authorized_keys</code> file. Do not share your private key.</div>
+  </section>
+
+  <section class="step">
+    <h2>5. Create the project folder and inventory file</h2>
+    <pre>mkdir -p ~/ansible-practical
+cd ~/ansible-practical
+nano inventory.ini</pre>
+    <p>Paste this inventory. Replace the example IP addresses and username:</p>
+    <pre>[webservers]
+192.168.1.101 ansible_user=ubuntu
+192.168.1.102 ansible_user=ubuntu</pre>
+    <p>Save in nano: press <strong>Ctrl + O</strong>, Enter, then <strong>Ctrl + X</strong>.</p>
+    <p>Check the inventory:</p>
+    <pre>cat inventory.ini</pre>
+  </section>
+
+  <section class="step">
+    <h2>6. Test connectivity using Ansible ping</h2>
+    <p>Run this command from the project folder on the control node:</p>
+    <pre>ansible all -i inventory.ini -m ping</pre>
+    <p><strong>Expected result:</strong> both managed nodes should return <code>"ping": "pong"</code> and show <code>SUCCESS</code>.</p>
+    <div class="info"><strong>If you get an SSH or permission error:</strong> check the IP, username, SSH service on the managed node, and SSH login. If you use password-based login, install <code>sshpass</code> on the control node and run <code>ansible all -i inventory.ini -m ping -k</code>.</div>
+  </section>
+
+  <section class="step">
+    <h2>7. Create the Ansible Playbook</h2>
+    <p>Create the playbook file:</p>
+    <pre>nano install-packages.yml</pre>
+    <p>Paste the complete code below:</p>
+    <pre>---
+- name: Configure web servers
+  hosts: webservers
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - apache2
+          - curl
+          - git
+          - vim
+        state: present
+
+    - name: Ensure Apache is started and enabled
+      service:
+        name: apache2
+        state: started
+        enabled: yes
+
+    - name: Copy custom web page
+      copy:
+        content: "&lt;h1&gt;Hello from Ansible&lt;/h1&gt;"
+        dest: /var/www/html/index.html
+        owner: root
+        group: root
+        mode: '0644'</pre>
+    <p>Save: <strong>Ctrl + O</strong>, Enter, <strong>Ctrl + X</strong>.</p>
+    <p>This playbook performs all four required tasks: updates apt cache, installs apache2/curl/git/vim, starts and enables Apache, and copies the custom index.html file.</p>
+  </section>
+
+  <section class="step">
+    <h2>8. Run the Playbook</h2>
+    <p>Run from the folder containing both files:</p>
+    <pre>ansible-playbook -i inventory.ini install-packages.yml</pre>
+    <p>If Ansible asks for a sudo password on the remote machines, use:</p>
+    <pre>ansible-playbook -i inventory.ini install-packages.yml -K</pre>
+    <p>Enter the remote user's sudo password when prompted. The play recap should list both managed nodes. On the first run, some tasks should show <code>changed</code>.</p>
+  </section>
+
+  <section class="step">
+    <h2>9. Verify Apache in the Browser</h2>
+    <p>Open a browser on a machine that can reach the managed nodes. Visit both addresses:</p>
+    <pre>http://192.168.1.101
+http://192.168.1.102</pre>
+    <p>You should see the message: <strong>Hello from Ansible</strong>. Use your actual managed-node IP addresses.</p>
+    <p>You can also test from the control node:</p>
+    <pre>curl http://192.168.1.101
+curl http://192.168.1.102</pre>
+  </section>
+
+  <section class="step">
+    <h2>10. Prove Idempotency (changed=0)</h2>
+    <p>Run the exact same playbook again:</p>
+    <pre>ansible-playbook -i inventory.ini install-packages.yml</pre>
+    <p>Because the packages, service state, and file content are already correct, the second run should show <code>changed=0</code> for each managed node (assuming no configuration has changed). This demonstrates Ansible idempotency.</p>
+  </section>
+
+  <section class="step">
+    <h2>11. Useful commands for the exam</h2>
+    <pre># Show Ansible version
+ansible --version
+
+# Check inventory hosts
+ansible all -i inventory.ini --list-hosts
+
+# Ping both managed nodes
+ansible all -i inventory.ini -m ping
+
+# Run the playbook
+ansible-playbook -i inventory.ini install-packages.yml
+
+# Run with sudo password prompt
+ansible-playbook -i inventory.ini install-packages.yml -K
+
+# Check Apache service on both nodes
+ansible webservers -i inventory.ini -m service -a "name=apache2 state=started"
+
+# Check the web page from the control node
+curl http://192.168.1.101
+curl http://192.168.1.102</pre>
+  </section>
+
+  <footer>DevOps Practical 6 — Ansible</footer>
+</main>
+</body>
+</html>
